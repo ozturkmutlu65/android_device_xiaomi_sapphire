@@ -243,7 +243,6 @@ DEVICE_FRAMEWORK_MANIFEST_FILE += $(DEVICE_PATH)/configs/vintf/framework_manifes
 DEVICE_MANIFEST_FILE += \
     $(DEVICE_PATH)/configs/vintf/manifest_network.xml \
     $(DEVICE_PATH)/configs/vintf/manifest_phone.xml
-endif
 DEVICE_MATRIX_FILE := hardware/qcom-caf/common/compatibility_matrix.xml
 
 # WiFi
