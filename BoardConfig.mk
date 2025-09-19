@@ -73,7 +73,7 @@ TARGET_SCREEN_DENSITY := 437
 TARGET_FS_CONFIG_GEN := $(DEVICE_PATH)/configs/config.fs
 
 # Init
-TARGET_INIT_VENDOR_LIB := //$(DEVICE_PATH):init_sapphire
+$(call soong_config_set,libinit,vendor_init_lib,libinit_sapphire)
 TARGET_RECOVERY_DEVICE_MODULES := init_sapphire
 
 # Kernel prebuilt
