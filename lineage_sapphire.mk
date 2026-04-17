@@ -17,16 +17,10 @@ $(call inherit-product, vendor/lineage/config/common_full_phone.mk)
 # Include our private certificate
 -include vendor/lineage-priv/keys/keys.mk
 
-# Gapps
--include vendor/gapps/arm64/arm64-vendor.mk
-
-# AudioFX
-TARGET_EXCLUDES_AUDIOFX := true
-
 # Device configs
-TARGET_BOOT_ANIMATION_RES = 1080
+TARGET_BOOT_ANIMATION_RES := 1080
 TARGET_HAS_UDFPS := true
-WITH_GMS := true
+PRODUCT_NO_CAMERA := true
 
 PRODUCT_NAME := lineage_sapphire
 PRODUCT_DEVICE := sapphire
