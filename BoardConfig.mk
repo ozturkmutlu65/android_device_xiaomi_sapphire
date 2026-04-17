@@ -85,6 +85,9 @@ TARGET_PD_SERVICE_ENABLED := true
 #Enable peripheral manager
 TARGET_PER_MGR_ENABLED := true
 
+# Fix: Create directory KERNEL_OBJ/usr for some modules
+$(shell mkdir -p $(OUT_DIR)/target/product/$(TARGET_DEVICE)/obj/KERNEL_OBJ/usr)
+
 # Init
 $(call soong_config_set,libinit,vendor_init_lib,//$(DEVICE_PATH):init_sapphire)
 
