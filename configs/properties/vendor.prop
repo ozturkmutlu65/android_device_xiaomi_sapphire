@@ -170,7 +170,6 @@ debug.egl.hw=0
 debug.mdpcomp.logs=0
 debug.sf.latch_unsignaled=0
 debug.sf.auto_latch_unsignaled=0
-debug.sf.disable_client_composition_cache=0
 debug.sf.enable_transaction_tracing=false
 debug.sf.enable_advanced_sf_phase_offset=1
 debug.sf.high_fps_early_gl_phase_offset_ns=-5000000
@@ -265,7 +264,7 @@ ro.hardware.egl=adreno
 ro.hardware.vulkan=adreno
 ro.opengles.version=196610
 debug.graphics.game_default_frame_rate.disabled=true
-debug.sf.disable_client_composition_cache=1
+debug.sf.disable_client_composition_cache=0
 debug.sf.enable_adpf_cpu_hint=true
 
 # Keystore
