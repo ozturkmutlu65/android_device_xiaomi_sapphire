@@ -131,10 +131,15 @@ class XiaomiSm6225UdfpsHandler : public UdfpsHandler {
     void onFingerDown(uint32_t /*x*/, uint32_t /*y*/, float /*minor*/, float /*major*/) {
         LOG(INFO) << __func__;
 
-        // Registramos el tiempo exacto en el que el dedo tocó la pantalla
+
         mFbDownTimeMs.store(std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count());
 
+
+        /*
+         * On fpc_fod devices, enable FOD status when finger down is detected
+         * since the waiting message is not reliably sent.
+         */    
         if (isFpcFod) {
             setFodStatus(FOD_STATUS_ON);
         }
@@ -145,7 +150,7 @@ class XiaomiSm6225UdfpsHandler : public UdfpsHandler {
     void onFingerUp() {
         LOG(INFO) << __func__;
 
-        // DEBOUNCE: Filtramos el falso "CANCEL" del framework que ocurre al encenderse el Doze
+        
         uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
         uint64_t elapsed = now - mFbDownTimeMs.load();
@@ -178,7 +183,13 @@ class XiaomiSm6225UdfpsHandler : public UdfpsHandler {
                 setFodStatus(FOD_STATUS_OFF);
             }
         }
-
+        
+        /*
+         * Vendor codes:
+         * 21: waiting for finger (goodix_fod)
+         * 22: finger down (fpc_fod)
+         * 23: finger up
+         */
         if (!isFpcFod && vendorCode == 21) {
             setFodStatus(FOD_STATUS_ON);
         } else if (isFpcFod && vendorCode == 22) {
@@ -216,7 +227,7 @@ class XiaomiSm6225UdfpsHandler : public UdfpsHandler {
     std::atomic<bool> isRunning{true};
     bool isFpcFod;
 
-    // --- Añadido para el filtro anti micro-reinicios ---
+    
     std::atomic<uint64_t> mFbDownTimeMs{0};
 
     // Mutexes for thread safety
@@ -246,8 +257,13 @@ class XiaomiSm6225UdfpsHandler : public UdfpsHandler {
             int brightness = getBrightness();
             if (brightness != -1) {
                 int currentState = (brightness == 0) ? 0 : 1;
+
+                // Leemos el estado del interruptor de Android
+                bool isScreenOffEnabled = android::base::GetBoolProperty("persist.vendor.sys.fp.screen_off", true);
+
                 if (currentState != lastState) {
-                    if (currentState == 0 && isFpcFod) {
+                    // Si el interruptor esta apagado, el centinela NO enciende el tactil
+                    if (currentState == 0 && isFpcFod && isScreenOffEnabled) {
                         setFodStatus(FOD_STATUS_ON);
                     } else if (currentState == 1 && isFpcFod) {
                         if (!enrolling.load()) {
@@ -263,9 +279,16 @@ class XiaomiSm6225UdfpsHandler : public UdfpsHandler {
 
     void shutdownThreads() {
         isRunning.store(false);
-        if (fodThread_.joinable()) fodThread_.join();
-        if (dispThread_.joinable()) dispThread_.join();
-        if (screenThread_.joinable()) screenThread_.join();
+        // Join threads if they are running
+        if (fodThread_.joinable()) {
+            fodThread_.join();
+        }
+        if (dispThread_.joinable()) {
+            dispThread_.join();
+        }
+        if (screenThread_.joinable()) {
+            screenThread_.join();
+        }
     }
 
     void fodPressMonitorThread() {
@@ -273,7 +296,8 @@ class XiaomiSm6225UdfpsHandler : public UdfpsHandler {
         
         int fd = open(FOD_PRESS_STATUS_PATH, O_RDONLY);
         if (fd < 0) {
-            LOG(ERROR) << "Failed to open " << FOD_PRESS_STATUS_PATH << ", error: " << strerror(errno);
+            LOG(ERROR) << "Failed to open " << FOD_PRESS_STATUS_PATH 
+                       << ", error: " << strerror(errno);
             return;
         }
 
@@ -287,7 +311,7 @@ class XiaomiSm6225UdfpsHandler : public UdfpsHandler {
         };
 
         while (isRunning.load()) {
-            int rc = poll(&fodPressStatusPoll, 1, 1000);
+            int rc = poll(&fodPressStatusPoll, 1, 1000);  // 1 second timeout
             
             if (rc < 0) {
                 if (errno == EINTR) continue;
@@ -307,14 +331,14 @@ class XiaomiSm6225UdfpsHandler : public UdfpsHandler {
                 continue;
             }
 
-
+            // Clear revents
             fodPressStatusPoll.revents = 0;
 
             const bool pressed = readBool(fd);
             uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
             
-            // DEBOUNCE: Filtramos el falso UP que envía el hardware al reiniciarse el panel
+            // FILTRO DE FALSOS UP HARDWARE
             if (pressed) {
                 mFbDownTimeMs.store(now);
             } else {
@@ -327,6 +351,13 @@ class XiaomiSm6225UdfpsHandler : public UdfpsHandler {
                         continue; 
                     }
                 }
+            }
+
+            // SEGURIDAD: Solo manda el toque si Screen-Off esta activado o la pantalla encendida
+            bool isScreenOffEnabled = android::base::GetBoolProperty("persist.vendor.sys.fp.screen_off", true);
+            if (!isScreenOffEnabled && getBrightness() == 0) {
+                LOG(INFO) << "UDFPS: Toque ignorado. Screen-Off desactivado.";
+                continue;
             }
 
             LOG(DEBUG) << "fod_press_status changed: " << (pressed ? "pressed" : "released");
@@ -342,7 +373,8 @@ class XiaomiSm6225UdfpsHandler : public UdfpsHandler {
         
         int fd = open(DISP_FEATURE_PATH, O_RDWR);
         if (fd < 0) {
-            LOG(ERROR) << "Failed to open " << DISP_FEATURE_PATH << ", error: " << strerror(errno);
+            LOG(ERROR) << "Failed to open " << DISP_FEATURE_PATH 
+                       << ", error: " << strerror(errno);
             return;
         }
 
@@ -364,7 +396,7 @@ class XiaomiSm6225UdfpsHandler : public UdfpsHandler {
         };
 
         while (isRunning.load()) {
-            int rc = poll(&dispEventPoll, 1, 1000);
+            int rc = poll(&dispEventPoll, 1, 1000);  // 1 second timeout
             
             if (rc < 0) {
                 if (errno == EINTR) continue;
@@ -388,7 +420,9 @@ class XiaomiSm6225UdfpsHandler : public UdfpsHandler {
             dispEventPoll.revents = 0;
 
             struct disp_event_resp* response = parseDispEvent(fd);
-            if (response == nullptr) continue;
+            if (response == nullptr) {
+                continue;
+            }
 
             if (response->base.type != MI_DISP_EVENT_FOD) {
                 LOG(WARNING) << "Unexpected display event: " << response->base.type;
@@ -400,7 +434,7 @@ class XiaomiSm6225UdfpsHandler : public UdfpsHandler {
 
             bool localHbmUiReady = value & LOCAL_HBM_UI_READY;
             
-            std::lock_guard<std::mutex> lock(device_mutex_);
+            std::lock_guard<std::mutex> deviceLock(device_mutex_);
             if (mDevice != nullptr) {
                 mDevice->extCmd(mDevice, COMMAND_NIT,
                               localHbmUiReady ? PARAM_NIT_FOD : PARAM_NIT_NONE);
